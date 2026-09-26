@@ -155,13 +155,15 @@ function normalize(st){
 }
 var CATALOG={};try{CATALOG=JSON.parse(document.getElementById("catalog").textContent);}catch(e){}
 var CAT_BY_ID={};Object.keys(CATALOG).forEach(function(k){CATALOG[k].forEach(function(x){CAT_BY_ID[x.id]=x;});});
-var JOBS=["PLD","WAR","DRK","GNB","WHM","SCH","AST","SGE","MNK","DRG","NIN","SAM","RPR","VPR","BRD","MCH","DNC","BLM","SMN","RDM","PCT"];
+var TYPES=["Fending","Maiming","Striking","Scouting","Aiming","Slaying","Healing","Casting","Weapons"];
+var TYPE_HINT={Slaying:"accessories only",Maiming:"armour only",Striking:"armour only",Scouting:"armour only"};
 var CLASSES=["GLA","PGL","MRD","LNC","ARC","CNJ","THM","ACN","ROG","BLU","BST"];
 var iconsOn=false,IS_FILE=!(window.claude&&typeof window.claude.use==="function"),backupMsg="";
 function iconUrl(i){var f=String(Math.floor(i/1000)*1000);while(f.length<6)f="0"+f;var n=String(i);while(n.length<6)n="0"+n;return "https://v2.xivapi.com/api/asset?path=ui/icon/"+f+"/"+n+".tex&format=png";}
 function iconTag(ci){return iconsOn&&ci&&ci.i?'<img class="ic" loading="lazy" alt="" src="'+iconUrl(ci.i)+'">':'';}
 function jobsShort(j){if(j==="All Classes")return "All jobs";return j.split(" ").filter(function(x){return CLASSES.indexOf(x)<0;}).join(" ");}
-function fitsJob(x,job){return job==="all"||x.j==="All Classes"||x.j.split(" ").indexOf(job)>=0;}
+function typeOf(x){if(x.s==="Weapon"||x.s==="Gladiator's Arm"||x.s==="Shield")return "Weapons";var m=/ of (\w+)$/.exec(x.n);return m&&TYPES.indexOf(m[1])>=0?m[1]:"Other";}
+function fitsFilter(x){return (!ui.addTypes.length||ui.addTypes.indexOf(typeOf(x))>=0)&&(!ui.addSlots.length||ui.addSlots.indexOf(x.s)>=0);}
 function expOf(r){return (r.exp||"Other").split(" · ")[0];}
 function raidOptions(sel,withAll){
   var html=withAll?'<option value="all">All raids</option>':'',groups=[];
@@ -169,8 +171,8 @@ function raidOptions(sel,withAll){
   groups.forEach(function(g){html+='<optgroup label="'+esc(g)+'">'+state.raids.filter(function(r){return expOf(r)===g;}).map(function(r){return '<option value="'+r.id+'"'+(r.id===sel?' selected':'')+'>'+esc(r.name)+'</option>';}).join('')+'</optgroup>';});
   return html;
 }
-var ui={group:"raid",filter:"all",hideGot:false,addRaid:null,addJob:"all",addSlots:[],addPick:[],addNote:"",confirmDel:null};
-try{var u=JSON.parse(localStorage.getItem("glam-ledger-ui")||"null");if(u){ui.group=u.group||"raid";ui.hideGot=!!u.hideGot;ui.addJob=u.addJob||"all";}}catch(e){}
+var ui={group:"raid",filter:"all",hideGot:false,addRaid:null,addTypes:[],addSlots:[],addPick:[],addNote:"",confirmDel:null};
+try{var u=JSON.parse(localStorage.getItem("glam-ledger-ui")||"null");if(u){ui.group=u.group||"raid";ui.hideGot=!!u.hideGot;ui.addTypes=Array.isArray(u.addTypes)?u.addTypes:[];}}catch(e){}
 var artifactApi=null, mode="pending", saveTimer=null, saveState="ok";
 var app=document.getElementById("app");
 
@@ -189,7 +191,7 @@ function need(rid){
   return n;
 }
 
-function saveUi(){try{localStorage.setItem("glam-ledger-ui",JSON.stringify({group:ui.group,hideGot:ui.hideGot,addJob:ui.addJob}));}catch(e){}}
+function saveUi(){try{localStorage.setItem("glam-ledger-ui",JSON.stringify({group:ui.group,hideGot:ui.hideGot,addTypes:ui.addTypes}));}catch(e){}}
 
 function changed(){
   render();
@@ -250,7 +252,6 @@ function itemRow(it,showRaid){
   if(it.note)sub.push(esc(it.note));
   var ci=it.item&&CAT_BY_ID[it.item];
   var primary=ci?iconTag(ci)+esc(ci.n):(r?esc(r.set||r.name)+' '+esc(slotName(it.slot)):esc(slotName(it.slot)));
-  if(ci)sub.push(esc(jobsShort(ci.j)));
   return '<div class="item'+(it.status!=="want"?" done":"")+'">'+
     '<div class="slotcol slot">'+esc(slotName(it.slot))+'</div>'+
     '<div class="main"><span>'+primary+(it.ex?'<span class="ex">example</span>':'')+'</span>'+
@@ -264,14 +265,14 @@ function pieceList(){
   var list=CATALOG[ui.addRaid],r=raidById(ui.addRaid);
   if(!list||!r)return '<div class="emptypick">This raid has no item list. Pick slots above and they are added as general pieces.</div>';
   var have={};state.items.forEach(function(i){if(i.item)have[i.item]=1;});
-  var shown=list.filter(function(x){return fitsJob(x,ui.addJob)&&(!ui.addSlots.length||ui.addSlots.indexOf(x.s)>=0);});
-  if(!shown.length)return '<div class="emptypick">No pieces match this job and slot filter.</div>';
+  var shown=list.filter(fitsFilter);
+  if(!shown.length)return '<div class="emptypick">No pieces match this gear type and slot filter.</div>';
   return SLOTS.map(function(sl){var g=shown.filter(function(x){return x.s===sl;});if(!g.length)return '';var c=r.costs[sl];
     return '<h4>'+esc(slotName(sl))+(c?' · '+c[1]+' × '+esc(r.floors[c[0]])+' book':'')+'</h4>'+g.map(function(x){var on=!!have[x.id],chk=ui.addPick.indexOf(x.id)>=0;
-      return '<label class="'+(on?'on':'')+'"><input type="checkbox" id="pk-'+x.id+'" data-act="pick" data-id="'+x.id+'"'+(chk?' checked':'')+(on?' disabled':'')+'><span>'+iconTag(x)+esc(x.n)+'<div class="jobs">'+esc(jobsShort(x.j))+'</div></span><span class="pc">'+(on?'on your list':'')+'</span></label>';}).join('');}).join('');
+      return '<label class="'+(on?'on':'')+'"><input type="checkbox" id="pk-'+x.id+'" data-act="pick" data-id="'+x.id+'"'+(chk?' checked':'')+(on?' disabled':'')+'><span>'+iconTag(x)+esc(x.n)+'</span><span class="pc">'+(on?'on your list':'')+'</span></label>';}).join('');}).join('');
 }
 function shownIds(){var list=CATALOG[ui.addRaid]||[],have={};state.items.forEach(function(i){if(i.item)have[i.item]=1;});
-  return list.filter(function(x){return !have[x.id]&&fitsJob(x,ui.addJob)&&(!ui.addSlots.length||ui.addSlots.indexOf(x.s)>=0);}).map(function(x){return x.id;});}
+  return list.filter(function(x){return !have[x.id]&&fitsFilter(x);}).map(function(x){return x.id;});}
 
 function wishlist(){
   var items=state.items.filter(function(it){
@@ -344,7 +345,8 @@ function render(){
     '<div class="layout"><div style="display:flex;flex-direction:column;gap:20px;min-width:0">'+
       '<form class="panel" id="addform"><h2>Add to wishlist</h2>'+
         '<div class="row"><div class="field grow"><label class="label" for="add-raid">Raid</label><select id="add-raid" data-act="addraid-sel">'+raidOptions(ui.addRaid,false)+'</select></div>'+
-        '<div class="field grow"><label class="label" for="add-job">Glamour for</label><select id="add-job" data-act="addjob"><option value="all">Any job</option>'+JOBS.map(function(j){return '<option value="'+j+'"'+(ui.addJob===j?' selected':'')+'>'+j+'</option>';}).join('')+'</select></div></div>'+
+        '</div>'+
+        '<div class="field"><span class="label">Gear type · leave empty to show all</span><div class="chips">'+TYPES.map(function(t){return '<button type="button" class="chip" data-act="gtype" data-t="'+t+'" aria-pressed="'+(ui.addTypes.indexOf(t)>=0)+'"'+(TYPE_HINT[t]?' title="'+TYPE_HINT[t]+'"':'')+'>'+t+'</button>';}).join('')+(ui.addTypes.length||ui.addSlots.length?'<button type="button" class="btn ghost" data-act="clearfilters">Clear filters</button>':'')+'</div></div>'+
         '<div class="field"><span class="label">Slots · leave empty to show all</span><div class="chips">'+SLOTS.map(function(s){return '<button type="button" class="chip" data-act="slot" data-s="'+s+'" aria-pressed="'+(ui.addSlots.indexOf(s)>=0)+'">'+esc(slotName(s))+'</button>';}).join('')+'</div></div>'+
         '<div class="pick" id="pick">'+pieceList()+'</div>'+
         '<div class="field"><label class="label" for="add-note">Note (optional)</label><input type="text" id="add-note" placeholder="e.g. dyed black, for the summer glam" value="'+esc(ui.addNote)+'"></div>'+
@@ -370,6 +372,8 @@ app.addEventListener("click",function(e){
   var t=e.target.closest("[data-act]");if(!t||t.tagName==="INPUT"||t.tagName==="SELECT")return;
   var a=t.dataset.act;
   if(a==="slot"){var s=t.dataset.s,i=ui.addSlots.indexOf(s);if(i>=0)ui.addSlots.splice(i,1);else ui.addSlots.push(s);keepNote();render();}
+  else if(a==="gtype"){var gt=t.dataset.t,gi=ui.addTypes.indexOf(gt);if(gi>=0)ui.addTypes.splice(gi,1);else ui.addTypes.push(gt);saveUi();keepNote();render();}
+  else if(a==="clearfilters"){ui.addTypes=[];ui.addSlots=[];saveUi();keepNote();render();}
   else if(a==="selall"){shownIds().forEach(function(id){if(ui.addPick.indexOf(id)<0)ui.addPick.push(id);});keepNote();render();}
   else if(a==="selnone"){ui.addPick=[];keepNote();render();}
   else if(a==="export"){try{var blob=new Blob([JSON.stringify(state,null,1)],{type:"application/json"});var aEl=document.createElement("a");aEl.href=URL.createObjectURL(blob);aEl.download="glam-ledger-backup-"+new Date().toISOString().slice(0,10)+".json";document.body.appendChild(aEl);aEl.click();aEl.remove();backupMsg="Backup saved to your downloads.";}catch(err){backupMsg="Export failed: "+err.message;}render();}
@@ -389,7 +393,6 @@ app.addEventListener("change",function(e){
   var t=e.target,a=t.dataset.act;if(!a)return;
   if(t.id==="importfile"&&t.files&&t.files[0]){var fr=new FileReader();fr.onload=function(){try{var d=JSON.parse(fr.result);if(!d||!d.raids||!d.items)throw new Error("This file isn't a ledger backup.");state=normalize(d);backupMsg="Imported "+state.items.length+" pieces.";changed();}catch(err){backupMsg="Couldn't import: "+err.message;render();}};fr.readAsText(t.files[0]);return;}
   if(a==="addraid-sel"){ui.addRaid=t.value;ui.addPick=[];keepNote();render();}
-  else if(a==="addjob"){ui.addJob=t.value;saveUi();keepNote();render();}
   else if(a==="pick"){var pid=+t.dataset.id,pi=ui.addPick.indexOf(pid);if(t.checked&&pi<0)ui.addPick.push(pid);if(!t.checked&&pi>=0)ui.addPick.splice(pi,1);keepNote();var sc=document.getElementById("pick").scrollTop;render();document.getElementById("pick").scrollTop=sc;}
   else if(a==="filter"){ui.filter=t.value;render();}
   else if(a==="hidegot"){ui.hideGot=t.checked;saveUi();render();}
