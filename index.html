@@ -105,7 +105,7 @@ input[type=number]{width:64px}
 .ex{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);border:1px solid var(--gold);border-radius:4px;padding:0 4px;margin-left:6px;vertical-align:1px}
 .empty{padding:24px 0;text-align:center;color:var(--muted)}
 .calc{display:flex;flex-direction:column;gap:12px}
-.calc-raid{border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px;background:var(--surface2)}
+.calc-raid .group-body{padding:4px 12px 12px;display:flex;flex-direction:column;gap:10px}
 .calc-table{width:100%;border-collapse:collapse;font-size:14px}
 .calc-table th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;text-align:right;padding:0 4px 6px}
 .calc-table th:first-child{text-align:left}
@@ -300,14 +300,14 @@ function wishlist(){
     SLOTS.forEach(function(s){var g=items.filter(function(i){return i.slot===s;});
       if(g.length){g.sort(function(a,b){return state.raids.findIndex(function(r){return r.id===a.raid;})-state.raids.findIndex(function(r){return r.id===b.raid;});});groups.push({key:"slot:"+s,title:slotName(s),meta:"",items:g,showRaid:true});}});
   }
-  var toolbar=groups.length>1?'<div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="openall">Expand all</button><button type="button" class="btn ghost" data-act="closeall">Collapse all</button></div>':'';
+  var toolbar=groups.length>1?'<div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="openall" data-scope="wish">Expand all</button><button type="button" class="btn ghost" data-act="closeall" data-scope="wish">Collapse all</button></div>':'';
   return toolbar+'<div class="groups">'+groups.map(function(g){
     var want=g.items.filter(function(i){return i.status==="want";}).length;
     var isOpen=ui.open[g.key]!==undefined?ui.open[g.key]:groups.length===1;
     var stats='<span class="pill want num">'+want+' wanted</span><span class="pill num">'+g.items.length+' total</span>';
     if(g.raid){var n=need(g.raid),b=books(g.raid),left=0;n.forEach(function(v,fi){left+=Math.max(0,v-b[fi]);});
       stats+=left?'<span class="pill clears num">'+left+' clear'+(left===1?'':'s')+' left</span>':(want?'<span class="pill done">enough books</span>':'<span class="pill done">complete</span>');}
-    return '<details class="group" data-g="'+esc(g.key)+'"'+(isOpen?' open':'')+'><summary class="group-head"><h3>'+esc(g.title)+(g.meta?' <span class="small muted" style="font-family:var(--body)">'+esc(g.meta)+'</span>':'')+'</h3><span class="group-stats">'+stats+'</span></summary>'+
+    return '<details class="group" data-scope="wish" data-g="'+esc(g.key)+'"'+(isOpen?' open':'')+'><summary class="group-head"><h3>'+esc(g.title)+(g.meta?' <span class="small muted" style="font-family:var(--body)">'+esc(g.meta)+'</span>':'')+'</h3><span class="group-stats">'+stats+'</span></summary>'+
       '<div class="group-body">'+g.items.map(function(i){return itemRow(i,g.showRaid);}).join('')+'</div></details>';
   }).join('')+'</div>';
 }
@@ -315,7 +315,8 @@ function wishlist(){
 function calculator(){
   var raids=state.raids.filter(function(r){return state.items.some(function(i){return i.raid===r.id;});});
   if(!raids.length)return '<p class="muted small">Add wishlist items and the book totals for each raid appear here.</p>';
-  return raids.map(function(r){
+  var toolbar=raids.length>1?'<div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-act="openall" data-scope="calc">Expand all</button><button type="button" class="btn ghost" data-act="closeall" data-scope="calc">Collapse all</button></div>':'';
+  return toolbar+raids.map(function(r){
     var n=need(r.id),b=books(r.id),runs=0;
     var rows=r.floors.map(function(f,fi){
       var left=Math.max(0,n[fi]-b[fi]);runs+=left;
@@ -325,9 +326,12 @@ function calculator(){
         '<button type="button" data-act="book" data-r="'+r.id+'" data-f="'+fi+'" data-d="1" aria-label="One more '+esc(f)+' book">+</button></span></td>'+
         '<td class="farm '+(left?'more':'zero')+'">'+(n[fi]===0?'<span class="muted">–</span>':(left?left:'✓'))+'</td></tr>';
     }).join('');
-    return '<div class="calc-raid"><div class="row spread"><h3>'+esc(r.name)+'</h3></div>'+
-      '<table class="calc-table"><thead><tr><th>Floor book</th><th>Needed</th><th>Owned</th><th>Clears left</th></tr></thead><tbody>'+rows+'</tbody></table>'+
-      '<div class="total"><span class="muted small">One book per clear. Total clears still to farm</span><strong class="num">'+runs+'</strong></div></div>';
+    var key="calc:"+r.id,isOpen=ui.open[key]!==undefined?ui.open[key]:raids.length===1;
+    var anyNeed=n.some(function(v){return v>0;});
+    var pill=runs?'<span class="pill clears num">'+runs+' clear'+(runs===1?'':'s')+' left</span>':(anyNeed?'<span class="pill done">enough books</span>':'<span class="pill">no books needed</span>');
+    return '<details class="group calc-raid" data-scope="calc" data-g="'+key+'"'+(isOpen?' open':'')+'><summary class="group-head"><h3>'+esc(r.name)+(r.exp?' <span class="small muted" style="font-family:var(--body)">'+esc(r.exp)+'</span>':'')+'</h3><span class="group-stats">'+pill+'</span></summary>'+
+      '<div class="group-body"><table class="calc-table"><thead><tr><th>Floor book</th><th>Needed</th><th>Owned</th><th>Clears left</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+      '<div class="total"><span class="muted small">One book per clear. Total clears still to farm</span><strong class="num">'+runs+'</strong></div></div></details>';
   }).join('');
 }
 
@@ -399,7 +403,7 @@ app.addEventListener("click",function(e){
   else if(a==="status"){var it=state.items.find(function(x){return x.id===t.dataset.id;});if(it){it.status=t.dataset.v;changed();}}
   else if(a==="del"){state.items=state.items.filter(function(x){return x.id!==t.dataset.id;});changed();}
   else if(a==="group"){ui.group=t.dataset.v;saveUi();render();}
-  else if(a==="openall"||a==="closeall"){[].forEach.call(document.querySelectorAll("details.group"),function(d){ui.open[d.dataset.g]=(a==="openall");});saveUi();render();}
+  else if(a==="openall"||a==="closeall"){[].forEach.call(document.querySelectorAll('details.group[data-scope="'+t.dataset.scope+'"]'),function(d){ui.open[d.dataset.g]=(a==="openall");});saveUi();render();}
   else if(a==="book"){var b=books(t.dataset.r),f=+t.dataset.f;b[f]=Math.max(0,b[f]+(+t.dataset.d));changed();}
   else if(a==="clearex"){state.items=state.items.filter(function(x){return !x.ex;});Object.keys(state.books).forEach(function(k){state.books[k]=[0,0,0,0];});changed();}
   else if(a==="addraid"){var id=uid();state.raids.push({id:id,name:"New raid",exp:"",set:"",floors:["Floor 1","Floor 2","Floor 3","Floor 4"],tokens:["Book I","Book II","Book III","Book IV"],costs:JSON.parse(JSON.stringify(DEFAULT_COSTS)),drops:{}});normalize(state);state.books[id]=[0,0,0,0];changed();document.getElementById("settings").open=true;var n=document.getElementById("rn-"+id);if(n){n.focus();n.select();}}
