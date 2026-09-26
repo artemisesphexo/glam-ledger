@@ -159,7 +159,38 @@ var JOBS=["PLD","WAR","DRK","GNB","WHM","SCH","AST","SGE","MNK","DRG","NIN","SAM
 var CLASSES=["GLA","PGL","MRD","LNC","ARC","CNJ","THM","ACN","ROG","BLU","BST"];
 var iconsOn=false,IS_FILE=!(window.claude&&typeof window.claude.use==="function"),backupMsg="";
 function iconUrl(i){var f=String(Math.floor(i/1000)*1000);while(f.length<6)f="0"+f;var n=String(i);while(n.length<6)n="0"+n;return "https://v2.xivapi.com/api/asset?path=ui/icon/"+f+"/"+n+".tex&format=png";}
-function iconTag(ci){return iconsOn&&ci&&ci.i?'<img class="ic" loading="lazy" alt="" src="'+iconUrl(ci.i)+'">':'';}
+/* Live icon lookup: ask XIVAPI's Item sheet for each item's current icon (hi-res path), cache it,
+   and fall back to the icon number bundled in the catalog if the API is unreachable. */
+var XIVAPI="https://v2.xivapi.com/api",ICON_LS="glam-ledger-icons-v1",ICON_BATCH=50;
+var LIVE_ICON={},iconAsked={},iconQueue=[],iconTimer=null;
+try{var _ic=JSON.parse(localStorage.getItem(ICON_LS)||"null");if(_ic&&typeof _ic==="object")LIVE_ICON=_ic;}catch(e){}
+var ICON_PATH=/^ui\/icon\/\d{6}\/\d{6}(_hr1)?\.tex$/;
+function assetUrl(p){return XIVAPI+"/asset?path="+p+"&format=png";}
+function queueIcon(id){if(iconAsked[id])return;iconAsked[id]=1;iconQueue.push(id);if(!iconTimer)iconTimer=setTimeout(flushIcons,0);}
+function flushIcons(){
+  iconTimer=null;
+  if(typeof fetch!=="function"){iconQueue=[];return;}
+  while(iconQueue.length){
+    (function(ids){
+      fetch(XIVAPI+"/sheet/Item?fields=Icon&rows="+ids.join(","))
+        .then(function(r){if(!r.ok)throw new Error(r.status);return r.json();})
+        .then(function(d){
+          var changed=false;
+          (d&&d.rows||[]).forEach(function(row){
+            var ic=row&&row.fields&&row.fields.Icon,p=ic&&(ic.path_hr1||ic.path);
+            if(p&&ICON_PATH.test(p)&&CAT_BY_ID[row.row_id]&&LIVE_ICON[row.row_id]!==p){LIVE_ICON[row.row_id]=p;changed=true;}
+          });
+          if(changed){try{localStorage.setItem(ICON_LS,JSON.stringify(LIVE_ICON));}catch(e){}if(iconsOn)render();}
+        })["catch"](function(){});
+    })(iconQueue.splice(0,ICON_BATCH));
+  }
+}
+function iconTag(ci){
+  if(!iconsOn||!ci)return '';
+  queueIcon(ci.id);
+  var src=(LIVE_ICON[ci.id]&&ICON_PATH.test(LIVE_ICON[ci.id]))?assetUrl(LIVE_ICON[ci.id]):(ci.i?iconUrl(ci.i):'');
+  return src?'<img class="ic" loading="lazy" alt="" src="'+src+'">':'';
+}
 function jobsShort(j){if(j==="All Classes")return "All jobs";return j.split(" ").filter(function(x){return CLASSES.indexOf(x)<0;}).join(" ");}
 function fitsJob(x,job){return job==="all"||x.j==="All Classes"||x.j.split(" ").indexOf(job)>=0;}
 function expOf(r){return (r.exp||"Other").split(" · ")[0];}
